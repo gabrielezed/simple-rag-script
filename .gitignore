@@ -1,0 +1,26 @@
+#Ignore codebase-example
+codebase-example/
+
+#Ignore VSCODE
+.vscode/
+
+#Ignore Python venv
+.venv/
+venv/
+__pycache__/
+
+# Ignore log files
+*.log
+/dist
+
+#Ignore build files and others
+*.o
+vss.so
+.DS_Store
+*.swp
+*.swo
+*.log
+*.tmp
+*.temp
+*.ps1
+*.db

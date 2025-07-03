@@ -1,0 +1,30 @@
+# Ignora la cartella di Git
+.git/
+
+# Ignora le cartelle degli ambienti virtuali Python
+.venv/
+venv/
+__pycache__/
+
+# Ignora i file di log o di output
+*.log
+/dist
+
+# Ignora le cartelle di configurazione degli editor
+.vscode/
+.idea/
+
+.vscode/
+.git/
+.venv/
+rag/
+*.o
+vss.so
+.DS_Store
+*.swp
+*.swo
+*.log
+*.tmp
+*.temp
+*.ps1
+test_vss.db
