@@ -103,7 +103,6 @@ class VectorDB:
             return True
         except Exception as e:
             print(f"Error indexing {file_path}: {e}")
-            # In un'implementazione più avanzata, qui si potrebbe chiamare self.conn.rollback()
             return False
 
     def find_relevant_chunks(self, question):
@@ -121,37 +120,25 @@ class VectorDB:
         chunk_texts, embeddings_blob = zip(*all_chunks)
         chunk_embeddings = np.array([np.frombuffer(blob, dtype=np.float32) for blob in embeddings_blob])
         
-        # Normalizza il vettore della domanda
         q_norm = np.linalg.norm(question_embedding)
-        if q_norm == 0:
-            return [] # La domanda ha un vettore nullo, impossibile calcolare la similarità
+        if q_norm == 0: return []
         question_embedding /= q_norm
 
-        # Normalizza i vettori dei chunk
         c_norms = np.linalg.norm(chunk_embeddings, axis=1)
-        
-        # --- FIX APPLICATO ---
-        # Trova gli indici dei chunk validi (con norma non nulla)
         valid_indices = np.where(c_norms > 0)[0]
-        if len(valid_indices) == 0:
-            return [] # Nessun chunk valido trovato
+        if len(valid_indices) == 0: return []
 
-        # Filtra i chunk e le loro norme per escludere i vettori nulli
         valid_embeddings = chunk_embeddings[valid_indices]
         valid_texts = [chunk_texts[i] for i in valid_indices]
         valid_norms = c_norms[valid_indices]
 
-        # Normalizza solo i vettori validi
         normalized_chunk_embeddings = valid_embeddings / valid_norms[:, np.newaxis]
         
-        # Calcola la similarità e trova i migliori K
         similarities = np.dot(normalized_chunk_embeddings, question_embedding)
         
-        # Assicurati di non chiedere più risultati di quanti ne abbiamo
         actual_top_k = min(top_k, len(valid_indices))
         top_k_indices_in_valid = np.argsort(similarities)[-actual_top_k:][::-1]
         
-        # Mappa gli indici dei risultati agli indici originali
         return [valid_texts[i] for i in top_k_indices_in_valid]
 
     def purge_database(self):
@@ -160,8 +147,12 @@ class VectorDB:
             cur.execute("DELETE FROM chunks;")
             cur.execute("DELETE FROM files;")
             cur.execute("DELETE FROM chat_history;")
-            cur.execute("VACUUM;")
             self.conn.commit()
+            
+            # --- FIX APPLICATO ---
+            # Esegui VACUUM dopo il commit, al di fuori della transazione.
+            self.conn.execute("VACUUM;")
+            
             return True
         except sqlite3.Error as e:
             print(f"Error purging database: {e}")
@@ -170,7 +161,6 @@ class VectorDB:
     # --- Metodi per la Gestione del Contesto ---
 
     def add_message_to_context(self, context_name, role, content):
-        """Aggiunge un messaggio alla cronologia di un contesto."""
         try:
             cur = self.conn.cursor()
             cur.execute(
@@ -182,7 +172,6 @@ class VectorDB:
             print(f"Error adding message to context '{context_name}': {e}")
 
     def get_context_history(self, context_name, limit=None):
-        """Recupera la cronologia di una conversazione."""
         try:
             cur = self.conn.cursor()
             query = "SELECT role, content FROM chat_history WHERE context_name = ? ORDER BY timestamp DESC"
@@ -200,7 +189,6 @@ class VectorDB:
             return []
 
     def list_contexts(self):
-        """Restituisce una lista di tutti i nomi di contesto unici."""
         try:
             cur = self.conn.cursor()
             cur.execute("SELECT DISTINCT context_name FROM chat_history ORDER BY context_name")
@@ -211,7 +199,6 @@ class VectorDB:
             return []
 
     def delete_context(self, context_name):
-        """Elimina un intero contesto di conversazione."""
         try:
             cur = self.conn.cursor()
             cur.execute("DELETE FROM chat_history WHERE context_name = ?", (context_name,))
@@ -222,7 +209,6 @@ class VectorDB:
             return False
             
     def context_exists(self, context_name):
-        """Controlla se un contesto esiste."""
         try:
             cur = self.conn.cursor()
             cur.execute("SELECT 1 FROM chat_history WHERE context_name = ? LIMIT 1", (context_name,))
