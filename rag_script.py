@@ -35,10 +35,11 @@ def main():
     config = load_config(CONFIG_FILE)
     db_manager = VectorDB(DB_PATH, CONFIG_FILE)
 
-    # --- Inizializzazione dello Stato del Contesto ---
+    # --- Inizializzazione dello Stato ---
     context_settings = config.get("context_settings", {})
     is_context_enabled = context_settings.get("context_enabled_by_default", True)
     current_context = "default"
+    session_settings = {} # Dizionario per le impostazioni di sessione
 
     print("\n--- RAG Interactive Console ---")
     print("Type your question and press Enter. For a list of commands, type !help.")
@@ -72,10 +73,8 @@ def main():
                 elif command == '!purge':
                     command_handler.handle_purge(db_manager)
                 elif command == '!reindex-file':
-                    # --- FIX APPLICATO: Gestisce percorsi con spazi ---
                     file_path = " ".join(args) if args else None
                     command_handler.handle_reindex_file(db_manager, file_path)
-                
                 elif command == '!context-on':
                     is_context_enabled = command_handler.handle_context_on()
                 elif command == '!context-off':
@@ -90,10 +89,13 @@ def main():
                     if new_ctx: current_context = new_ctx
                 elif command == '!context-delete':
                     command_handler.handle_context_delete(db_manager, args[0] if args else None, current_context)
-                
+                # --- NUOVO COMANDO ---
+                elif command == '!settings':
+                    command_handler.handle_setting_set(session_settings, args)
                 else:
                     print(f"Unknown command: '{command}'. Type !help for available commands.")
             
+            # Se non è un comando, è una domanda per l'LLM
             else:
                 question = user_input
                 print("\nSearching for relevant context in the database...")
@@ -104,7 +106,6 @@ def main():
                 history = []
                 if is_context_enabled:
                     print("Context history is ENABLED. Retrieving conversation...")
-                    # --- FIX APPLICATO: Default per la configurazione mancante ---
                     max_len = context_settings.get("max_history_length", 10)
                     history = db_manager.get_context_history(current_context, limit=max_len)
                 else:
@@ -112,15 +113,23 @@ def main():
 
                 print("Context found. Sending to LLM...\n")
                 
-                answer = ask_local_llm(history, rag_context_str, question, CONFIG_FILE)
-                
+                # --- LOGICA DI STREAMING APPLICATA ---
+                full_response = []
                 print("--- Answer from LLM ---")
-                print(answer)
-                print("-----------------------\n")
+                
+                # Passa anche session_settings al client LLM
+                token_generator = ask_local_llm(history, rag_context_str, question, session_settings, CONFIG_FILE)
+                
+                for token in token_generator:
+                    print(token, end='', flush=True)
+                    full_response.append(token)
+                
+                final_answer = "".join(full_response)
+                print("\n-----------------------\n")
 
                 if is_context_enabled:
                     db_manager.add_message_to_context(current_context, 'user', question)
-                    db_manager.add_message_to_context(current_context, 'assistant', answer)
+                    db_manager.add_message_to_context(current_context, 'assistant', final_answer)
 
         except (KeyboardInterrupt, EOFError):
             break

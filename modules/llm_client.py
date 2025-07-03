@@ -3,22 +3,27 @@
 import json
 import requests
 
-def ask_local_llm(history, rag_context, question, config_path='config.json'):
+def ask_local_llm(history, rag_context, question, session_settings, config_path='config.json'):
     """
-    Invia una domanda, il contesto RAG e la cronologia della conversazione
-    al server LLM locale.
+    Invia una domanda, il contesto RAG e la cronologia al server LLM locale
+    e restituisce la risposta come un generatore di token (streaming).
+    Applica le impostazioni di sessione che hanno la precedenza su config.json.
     """
-    # Carica l'intera sezione di configurazione dell'LLM
     try:
         with open(config_path, 'r') as f:
             config = json.load(f)
         
-        settings = config.get("llm_settings", {})
-        url = settings.get("server_url")
-        model_name = settings.get("chat_model_name")
-        temperature = settings.get("temperature", 0.7)
-        system_prompt = settings.get("system_prompt", "You are a helpful assistant.")
-        master_template = settings.get("master_prompt_template", "{context}\n\n{question}")
+        llm_config = config.get("llm_settings", {})
+        
+        # --- LOGICA DI OVERRIDE ---
+        # Le impostazioni di sessione hanno la precedenza su quelle del file di configurazione.
+        temperature = session_settings.get("temperature", llm_config.get("temperature", 0.7))
+        system_prompt = session_settings.get("system_prompt", llm_config.get("system_prompt", "You are a helpful assistant."))
+        master_template = session_settings.get("master_prompt_template", llm_config.get("master_prompt_template", "{context}\n\n{question}"))
+        
+        # Impostazioni che non vengono modificate a runtime
+        url = llm_config.get("server_url")
+        model_name = llm_config.get("chat_model_name")
 
         if not url:
             raise ValueError("Config error: 'server_url' is missing in llm_settings.")
@@ -26,8 +31,9 @@ def ask_local_llm(history, rag_context, question, config_path='config.json'):
         if not url.endswith('/chat/completions'):
             url = f"{url.rstrip('/')}/chat/completions"
 
-    except Exception as e:
-        return f"Error processing configuration file: {e}"
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+        yield f"Error processing configuration file: {e}"
+        return
 
     headers = { "Content-Type": "application/json" }
 
@@ -42,20 +48,31 @@ def ask_local_llm(history, rag_context, question, config_path='config.json'):
     data = {
         "model": model_name,
         "messages": messages_payload,
-        "temperature": temperature,
+        "temperature": float(temperature), # Assicura che la temperatura sia un float
+        "stream": True
     }
 
     try:
-        # --- FIX APPLICATO: Aggiunto timeout alla richiesta ---
-        # 5 secondi per la connessione, 300 secondi (5 min) per la risposta
-        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=(5, 300))
+        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=(5, 300), stream=True)
         response.raise_for_status()
-        response_json = response.json()
-        return response_json['choices'][0]['message']['content']
+
+        for line in response.iter_lines():
+            if line:
+                decoded_line = line.decode('utf-8')
+                if decoded_line.startswith('data: '):
+                    json_str = decoded_line[len('data: '):]
+                    if json_str.strip() == '[DONE]':
+                        break
+                    
+                    try:
+                        chunk = json.loads(json_str)
+                        token = chunk.get('choices', [{}])[0].get('delta', {}).get('content', '')
+                        if token:
+                            yield token
+                    except json.JSONDecodeError:
+                        continue
 
     except requests.exceptions.Timeout:
-        return "Connection to LLM server timed out. The server might be busy or unresponsive."
+        yield "Connection to LLM server timed out."
     except requests.exceptions.RequestException as e:
-        return f"Connection error to LLM server at {url}: {e}\nEnsure the server is running."
-    except (KeyError, IndexError) as e:
-        return f"Unexpected response format from LLM server: {response.text}"
+        yield f"Connection error to LLM server: {e}"
