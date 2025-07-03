@@ -20,10 +20,11 @@ This project provides an interactive console application that leverages a Retrie
 ## Features
 
   * **Interactive Console:** A user-friendly command-line interface for asking questions and managing the database.
+  * **Persistent Conversational Context:** Remembers your conversation history in named sessions, allowing for multi-turn dialogue and follow-up questions.
   * **Modular Architecture:** Core logic is separated into specialized modules for easy maintenance and extension.
   * **Fully Configurable:** Centralized `config.json` file to manage all important parameters, including prompts, temperature, and embedding settings.
   * **Dual Embedding Modes:** Choose between a fast, local `sentence-transformers` model or using your LM Studio server's embedding endpoint.
-  * **Powerful Commands:** Includes commands like `!reindex`, `!purge`, and `!status` for full control over the knowledge base.
+  * **Control Commands:** Includes commands like `!reindex`, `!purge`, and `!status` for full control over the knowledge base.
 
 -----
 
@@ -49,21 +50,25 @@ source venv/bin/activate  # On Windows: .\.venv\Scripts\activate
 
 # 3. Install dependencies
 pip install -r requirements.txt
-```
+````
 
-### 3\. Configure your Local LLM
+### 3\. Add Your Codebase
+
+Place all the source code files you want to chat with inside the `codebase` directory at the root of the project. If this directory doesn't exist, create it. The script will recursively scan this folder to build its knowledge base.
+
+### 4\. Configure your Local LLM
 
 1.  Open **LM Studio**.
 2.  Download a model of your choice from the **Discover** tab. An instruction-tuned model is recommended.
-3.  Go to the **Local Server** tab (`<->` icon).
+3.  Go to the **Local Server** tab (`>_` icon).
 4.  Select your downloaded model at the top.
 5.  Click **Start Server**.
 
-### 4\. Configure the Script
+### 5\. Configure the Script
 
 Edit the `config.json` file to match your setup and preferences. See the section below for a detailed explanation of all parameters.
 
-### 5\. First Run
+### 6\. First Run
 
 1.  Run the console application:
     ```sh
@@ -79,21 +84,25 @@ Edit the `config.json` file to match your setup and preferences. See the section
 
 ## Configuration (`config.json`)
 
-The `config.json` file is the control center for the application. It allows you to change a wide range of parameters without modifying the Python code.
+The `config.json` file is the control center for the application.
 
 ```json
 {
   "embedding_settings": {
     "mode": "api",
     "local_model": "all-MiniLM-L6-v2",
-    "top_k_chunks": 7
+    "top_k_chunks": 5
   },
   "llm_settings": {
     "server_url": "http://localhost:1234/v1",
     "chat_model_name": "local-model",
     "temperature": 0.4,
-    "system_prompt": "You are a senior C software architect. Your answers must be in English, be comprehensive, and explain the 'why' behind the code.",
-    "master_prompt_template": "As a senior software architect, analyze the following CODE SNIPPETS to answer the user's QUESTION. Synthesize information from all snippets to form a complete, high-level answer. If the snippets seem incomplete, infer the overall purpose based on function names, comments, and file structure. Provide the best possible architectural explanation based on the available evidence.\n\nCODE SNIPPETS:\n---\n{context}\n---\n\nQUESTION: {question}"
+    "system_prompt": "You are a senior C software architect...",
+    "master_prompt_template": "As a senior software architect, analyze..."
+  },
+  "context_settings": {
+    "max_history_length": 10,
+    "context_enabled_by_default": true
   }
 }
 ```
@@ -103,8 +112,8 @@ The `config.json` file is the control center for the application. It allows you 
 This section controls how the script generates vector embeddings.
 
   * `"mode"`: Sets the embedding method.
-      * `"api"`: (Default) Uses the embedding endpoint of your LM Studio server. This ensures **no external internet connection** is ever made, but it is **slower** during indexing.
-      * `"local"`: Uses a dedicated, highly-optimized `sentence-transformers` model. This is **much faster** for indexing but requires a **one-time download** of the model from Hugging Face.
+      * `"api"`: (Default) Uses the embedding endpoint of your LM Studio server. This is slower but ensures no external internet connection is ever made.
+      * `"local"`: Uses a dedicated, highly-optimized `sentence-transformers` model. This is much faster for indexing but requires a one-time download of the model from Hugging Face.
   * `"local_model"`: The name of the `sentence-transformers` model to use when `mode` is set to `"local"`.
   * `"top_k_chunks"`: The number of relevant text chunks to retrieve from the database and use as context for the LLM.
 
@@ -113,24 +122,46 @@ This section controls how the script generates vector embeddings.
 This section controls the interaction with the Large Language Model.
 
   * `"server_url"`: The address of your LM Studio server.
-  * `"chat_model_name"`: A name passed to the API. For LM Studio, this is not critical as the model is selected in the UI.
-  * `"temperature"`: Controls the randomness of the LLM's response. Lower values (e.g., `0.2`) produce more deterministic and focused answers. Higher values (e.g., `0.8`) produce more creative ones.
-  * `"system_prompt"`: The core instruction that defines the LLM's persona and overall goal (e.g., "You are an expert C code assistant").
-  * `"master_prompt_template"`: The most powerful setting. This is the template used to construct the final prompt sent to the LLM. The script will replace `{context}` with the retrieved code snippets and `{question}` with the user's question. You can modify this to change how the LLM is instructed to reason and answer.
+  * `"chat_model_name"`: A name passed to the API.
+  * `"temperature"`: Controls the randomness of the LLM's response. Lower values (e.g., `0.2`) are more deterministic; higher values (e.g., `0.8`) are more creative.
+  * `"system_prompt"`: The core instruction that defines the LLM's persona and overall goal.
+  * `"master_prompt_template"`: The template used to construct the final prompt sent to the LLM. The script will replace `{context}` with the retrieved code snippets and `{question}` with the user's question.
+
+### `context_settings`
+
+This section controls the new conversational memory feature.
+
+  * `"max_history_length"`: The maximum number of messages (user questions + assistant answers) to keep in the conversation history. This creates a "sliding window" of memory.
+  * `"context_enabled_by_default"`: Set to `true` if you want conversation history to be active by default when the script starts, or `false` for it to be off by default.
 
 -----
 
 ## Console Commands
 
-The application is controlled via a series of special commands that begin with `!`. Here is a complete list of their functions.
+The application is controlled via a series of special commands that begin with `!`.
+
+### Database and Indexing Commands
 
 | Command          | Arguments | Description                                                                                                                 |
 | :--------------- | :-------- | :-------------------------------------------------------------------------------------------------------------------------- |
 | **`!help`** | *None* | Displays the help message with a list of all available commands.                                                            |
-| **`!reindex`** | *None* | Starts a full, forced re-indexing of all files within the `codebase` directory, ignoring any files specified in `.ragignore`. |
-| **`!reindex-file`**| `<path>`  | Forces the re-indexing of a single specified file. The path should be relative to the project root (e.g., `codebase/vss.c`).  |
-| **`!status`** | *None* | Shows a quick status, indicating how many files are currently indexed in the database.                                        |
-| **`!purge`** | *None* | **Destructive action.** Permanently deletes all data from the embedding database. It will ask for a `(Y/N)` confirmation before proceeding. |
+| **`!reindex`** | *None* | Starts a full, forced re-indexing of all files within the `codebase` directory. |
+| **`!reindex-file`**| `<path>`  | Forces the re-indexing of a single specified file. Handles paths with spaces.  |
+| **`!status`** | *None* | Shows how many files are currently indexed in the database.                                        |
+| **`!purge`** | *None* | **Destructive.** Permanently deletes all indexed data and all conversation history. Asks for confirmation. |
 | **`!quit`** | *None* | Exits the application cleanly.                                                                                              |
+
+### Context Management Commands
+
+These commands allow you to control the conversational memory.
+
+| Command | Arguments | Description |
+| :--- | :--- | :--- |
+| **`!context-on`** | *None* | Enables conversation history. The LLM will remember previous turns. |
+| **`!context-off`**| *None* | Disables conversation history. Each question is treated as a one-shot query. |
+| **`!context-list`**| *None* | Shows a list of all saved conversation contexts. |
+| **`!context-new`**| `<name>` | Creates and switches to a new, empty conversation context. |
+| **`!context-switch`**| `<name>` | Switches to a previously created conversation context. |
+| **`!context-delete`**| `<name>` | **Destructive.** Permanently deletes a conversation context and its entire history. Asks for confirmation. |
 
 Any input that does not start with `!` is interpreted as a question to be asked to the codebase.
