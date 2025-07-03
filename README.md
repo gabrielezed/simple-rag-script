@@ -23,6 +23,7 @@ This project provides an interactive console application that leverages a Retrie
   * **Real-time Streaming Responses:** See the LLM's answers generated token-by-token for a responsive, real-time experience.
   * **Persistent Conversational Context:** Remembers your conversation history in named sessions, allowing for multi-turn dialogue and follow-up questions.
   * **Runtime Session Settings:** Temporarily modify LLM parameters like temperature during a session using the `!settings` command.
+  * **Robust Error Handling:** Intelligently detects missing model-specific dependencies and guides the user on how to install them.
   * **Modular Architecture:** Core logic is separated into specialized modules for easy maintenance and extension.
   * **Fully Configurable:** Centralized `config.json` file to manage all important parameters.
   * **Dual Embedding Modes:** Choose between a fast, local `sentence-transformers` model or using your LM Studio server's embedding endpoint.
@@ -96,16 +97,16 @@ The `config.json` file is the control center for the application.
 ```json
 {
   "embedding_settings": {
-    "mode": "api",
-    "local_model": "all-MiniLM-L6-v2",
-    "top_k_chunks": 5
+    "mode": "local",
+    "local_model": "nomic-ai/nomic-embed-text-v1.5",
+    "top_k_chunks": 5,
+    "trust_remote_code": false
   },
   "llm_settings": {
     "server_url": "http://localhost:1234/v1",
     "chat_model_name": "local-model",
     "temperature": 0.4,
-    "system_prompt": "You are a senior C software architect...",
-    "master_prompt_template": "As a senior software architect, analyze..."
+    ...
   },
   "context_settings": {
     "max_history_length": 10,
@@ -118,9 +119,12 @@ The `config.json` file is the control center for the application.
 
 Controls how the script generates vector embeddings.
 
-  * `"mode"`: `"api"` (default) or `"local"`.
-  * `"local_model"`: Name of the `sentence-transformers` model to use in `local` mode.
-  * `"top_k_chunks"`: Number of relevant chunks to use as context.
+  * `"mode"`: Sets the embedding method.
+      * `"api"`: Uses the embedding endpoint of your LM Studio server. Simpler setup, but significantly slower for indexing.
+      * `"local"`: (Recommended) Uses a dedicated `sentence-transformers` model. This is **much faster** for indexing due to local batch processing, but may require a one-time download of the model and its dependencies.
+  * `"local_model"`: The name of the `sentence-transformers` model from Hugging Face to use when `mode` is set to `"local"`.
+  * `"top_k_chunks"`: The number of relevant text chunks to retrieve from the database and use as context for the LLM.
+  * `"trust_remote_code"`: A security setting (default: `false`). Set to `true` **only if you trust the author** of the local model you are using and it requires custom code to run (e.g., Nomic models).
 
 ### `llm_settings`
 
@@ -158,8 +162,6 @@ The application is controlled via a series of special commands that begin with `
 
 ### Context Management Commands
 
-These commands allow you to control the conversational memory.
-
 | Command | Arguments | Description |
 | :--- | :--- | :--- |
 | **`!context-on`** | *None* | Enables conversation history for the current session. |
@@ -171,7 +173,7 @@ These commands allow you to control the conversational memory.
 
 ### Session Settings Commands
 
-These commands allow you to temporarily change settings for the current session. Changes are lost when the script exits.
+Changes are temporary and will be lost when the script exits.
 
 | Command | Arguments | Description |
 | :--- | :--- | :--- |
