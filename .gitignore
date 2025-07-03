@@ -1,6 +1,6 @@
 #Ignore codebase-example
 codebase-example/
-
+codebase/*
 #Ignore VSCODE
 .vscode/
 

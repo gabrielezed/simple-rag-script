@@ -10,5 +10,9 @@
     "temperature": 0.3,
     "system_prompt": "You are a senior C software architect. Your answers must be in English, be comprehensive, and explain the 'why' behind the code.",
     "master_prompt_template": "As a senior software architect, analyze the following CODE SNIPPETS to answer the user's QUESTION. Synthesize information from all snippets to form a complete, high-level answer. If the snippets seem incomplete, infer the overall purpose based on function names, comments, and file structure. Provide the best possible architectural explanation based on the available evidence.\n\nCODE SNIPPETS:\n---\n{context}\n---\n\nQUESTION: {question}"
+  },
+  "context_settings": {
+    "max_history_length": 10,
+    "context_enabled_by_default": true
   }
 }

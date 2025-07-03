@@ -3,10 +3,10 @@
 import json
 import requests
 
-def ask_local_llm(question, context, config_path='config.json'):
+def ask_local_llm(history, rag_context, question, config_path='config.json'):
     """
-    Invia una domanda e il contesto al server LLM locale, usando i parametri
-    avanzati specificati nel file di configurazione.
+    Invia una domanda, il contesto RAG e la cronologia della conversazione
+    al server LLM locale.
     """
     # Carica l'intera sezione di configurazione dell'LLM
     try:
@@ -23,7 +23,6 @@ def ask_local_llm(question, context, config_path='config.json'):
         if not url:
             raise ValueError("Config error: 'server_url' is missing in llm_settings.")
         
-        # Aggiunge /chat/completions se non presente per compatibilità
         if not url.endswith('/chat/completions'):
             url = f"{url.rstrip('/')}/chat/completions"
 
@@ -32,24 +31,30 @@ def ask_local_llm(question, context, config_path='config.json'):
 
     headers = { "Content-Type": "application/json" }
 
-    # Costruisci il prompt finale usando il template dal file di configurazione
-    final_prompt = master_template.replace("{context}", context).replace("{question}", question)
+    final_user_prompt = master_template.replace("{context}", rag_context).replace("{question}", question)
+
+    messages_payload = [
+        {"role": "system", "content": system_prompt}
+    ]
+    messages_payload.extend(history)
+    messages_payload.append({"role": "user", "content": final_user_prompt})
 
     data = {
         "model": model_name,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": final_prompt}
-        ],
+        "messages": messages_payload,
         "temperature": temperature,
     }
 
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(data))
+        # --- FIX APPLICATO: Aggiunto timeout alla richiesta ---
+        # 5 secondi per la connessione, 300 secondi (5 min) per la risposta
+        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=(5, 300))
         response.raise_for_status()
         response_json = response.json()
         return response_json['choices'][0]['message']['content']
 
+    except requests.exceptions.Timeout:
+        return "Connection to LLM server timed out. The server might be busy or unresponsive."
     except requests.exceptions.RequestException as e:
         return f"Connection error to LLM server at {url}: {e}\nEnsure the server is running."
     except (KeyError, IndexError) as e:

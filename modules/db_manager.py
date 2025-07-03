@@ -46,6 +46,8 @@ class VectorDB:
         if self.conn:
             self._create_tables()
 
+    # --- Metodi per Embedding e Indicizzazione ---
+
     def get_embedding(self, text_input):
         if self.mode == 'local':
             return self.embedding_model.encode(text_input, show_progress_bar=False)
@@ -101,6 +103,7 @@ class VectorDB:
             return True
         except Exception as e:
             print(f"Error indexing {file_path}: {e}")
+            # In un'implementazione più avanzata, qui si potrebbe chiamare self.conn.rollback()
             return False
 
     def find_relevant_chunks(self, question):
@@ -118,34 +121,116 @@ class VectorDB:
         chunk_texts, embeddings_blob = zip(*all_chunks)
         chunk_embeddings = np.array([np.frombuffer(blob, dtype=np.float32) for blob in embeddings_blob])
         
-        # --- FIX #1: BROADCASTING ERROR ---
-        # Questo è il modo corretto e sicuro per normalizzare gli array
+        # Normalizza il vettore della domanda
         q_norm = np.linalg.norm(question_embedding)
-        if q_norm != 0:
-            question_embedding /= q_norm
+        if q_norm == 0:
+            return [] # La domanda ha un vettore nullo, impossibile calcolare la similarità
+        question_embedding /= q_norm
 
-        c_norms = np.linalg.norm(chunk_embeddings, axis=1, keepdims=True)
-        # Evita la divisione per zero sostituendo le norme nulle con 1 (non cambia il vettore nullo)
-        c_norms[c_norms == 0] = 1
-        normalized_chunk_embeddings = chunk_embeddings / c_norms
-        # --- FINE FIX #1 ---
+        # Normalizza i vettori dei chunk
+        c_norms = np.linalg.norm(chunk_embeddings, axis=1)
         
+        # --- FIX APPLICATO ---
+        # Trova gli indici dei chunk validi (con norma non nulla)
+        valid_indices = np.where(c_norms > 0)[0]
+        if len(valid_indices) == 0:
+            return [] # Nessun chunk valido trovato
+
+        # Filtra i chunk e le loro norme per escludere i vettori nulli
+        valid_embeddings = chunk_embeddings[valid_indices]
+        valid_texts = [chunk_texts[i] for i in valid_indices]
+        valid_norms = c_norms[valid_indices]
+
+        # Normalizza solo i vettori validi
+        normalized_chunk_embeddings = valid_embeddings / valid_norms[:, np.newaxis]
+        
+        # Calcola la similarità e trova i migliori K
         similarities = np.dot(normalized_chunk_embeddings, question_embedding)
-        top_k_indices = np.argsort(similarities)[-top_k:][::-1]
         
-        return [chunk_texts[i] for i in top_k_indices]
+        # Assicurati di non chiedere più risultati di quanti ne abbiamo
+        actual_top_k = min(top_k, len(valid_indices))
+        top_k_indices_in_valid = np.argsort(similarities)[-actual_top_k:][::-1]
+        
+        # Mappa gli indici dei risultati agli indici originali
+        return [valid_texts[i] for i in top_k_indices_in_valid]
 
     def purge_database(self):
         try:
             cur = self.conn.cursor()
             cur.execute("DELETE FROM chunks;")
             cur.execute("DELETE FROM files;")
+            cur.execute("DELETE FROM chat_history;")
             cur.execute("VACUUM;")
             self.conn.commit()
             return True
         except sqlite3.Error as e:
             print(f"Error purging database: {e}")
             return False
+
+    # --- Metodi per la Gestione del Contesto ---
+
+    def add_message_to_context(self, context_name, role, content):
+        """Aggiunge un messaggio alla cronologia di un contesto."""
+        try:
+            cur = self.conn.cursor()
+            cur.execute(
+                "INSERT INTO chat_history (context_name, role, content) VALUES (?, ?, ?)",
+                (context_name, role, content)
+            )
+            self.conn.commit()
+        except sqlite3.Error as e:
+            print(f"Error adding message to context '{context_name}': {e}")
+
+    def get_context_history(self, context_name, limit=None):
+        """Recupera la cronologia di una conversazione."""
+        try:
+            cur = self.conn.cursor()
+            query = "SELECT role, content FROM chat_history WHERE context_name = ? ORDER BY timestamp DESC"
+            params = [context_name]
+            
+            if limit is not None:
+                query += " LIMIT ?"
+                params.append(limit)
+
+            cur.execute(query, params)
+            messages = cur.fetchall()
+            return [dict(zip(['role', 'content'], row)) for row in reversed(messages)]
+        except sqlite3.Error as e:
+            print(f"Error retrieving context history for '{context_name}': {e}")
+            return []
+
+    def list_contexts(self):
+        """Restituisce una lista di tutti i nomi di contesto unici."""
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT DISTINCT context_name FROM chat_history ORDER BY context_name")
+            contexts = [row[0] for row in cur.fetchall()]
+            return contexts
+        except sqlite3.Error as e:
+            print(f"Error listing contexts: {e}")
+            return []
+
+    def delete_context(self, context_name):
+        """Elimina un intero contesto di conversazione."""
+        try:
+            cur = self.conn.cursor()
+            cur.execute("DELETE FROM chat_history WHERE context_name = ?", (context_name,))
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error deleting context '{context_name}': {e}")
+            return False
+            
+    def context_exists(self, context_name):
+        """Controlla se un contesto esiste."""
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT 1 FROM chat_history WHERE context_name = ? LIMIT 1", (context_name,))
+            return cur.fetchone() is not None
+        except sqlite3.Error:
+            return False
+
+    # --- Metodi Interni e di Utilità ---
 
     def _create_connection(self):
         try:
@@ -159,6 +244,15 @@ class VectorDB:
             c = self.conn.cursor()
             c.execute("CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, content_hash TEXT NOT NULL);")
             c.execute("CREATE TABLE IF NOT EXISTS chunks (id INTEGER PRIMARY KEY, file_id INTEGER NOT NULL, chunk_text TEXT NOT NULL, embedding BLOB NOT NULL, FOREIGN KEY (file_id) REFERENCES files (id) ON DELETE CASCADE);")
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS chat_history (
+                    id INTEGER PRIMARY KEY,
+                    context_name TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
             self.conn.commit()
         except sqlite3.Error as e:
             print(f"Error creating tables: {e}")
@@ -167,13 +261,10 @@ class VectorDB:
         return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
     def _is_file_indexed_and_unchanged(self, file_path, file_hash):
-        # --- FIX #2: FETCHONE() BUG ---
-        # Salva il risultato in una variabile prima di usarlo per evitare di consumarlo
         cur = self.conn.cursor()
         cur.execute("SELECT content_hash FROM files WHERE path=?", (file_path,))
         row = cur.fetchone()
         return row is not None and row[0] == file_hash
-        # --- FINE FIX #2 ---
 
     def get_indexed_files_count(self):
         try:
@@ -184,4 +275,5 @@ class VectorDB:
             return 0
             
     def close(self):
-        if self.conn: self.conn.close()
+        if self.conn:
+            self.conn.close()
