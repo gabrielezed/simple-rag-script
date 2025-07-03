@@ -1,6 +1,6 @@
 # simple-rag-script
 
-An interactive console to chat with your local codebase using local LLMs.
+An interactive "console" to chat with your local codebase using local LLMs.
 
 ## Table of Contents
 - [About The Project](#about-the-project)
