@@ -20,11 +20,12 @@ This project provides an interactive console application that leverages a Retrie
 ## Features
 
   * **Interactive Console:** A user-friendly command-line interface for asking questions and managing the database.
+  * **Real-time Streaming Responses:** See the LLM's answers generated token-by-token for a responsive, real-time experience.
   * **Persistent Conversational Context:** Remembers your conversation history in named sessions, allowing for multi-turn dialogue and follow-up questions.
+  * **Runtime Session Settings:** Temporarily modify LLM parameters like temperature during a session using the `!settings` command.
   * **Modular Architecture:** Core logic is separated into specialized modules for easy maintenance and extension.
-  * **Fully Configurable:** Centralized `config.json` file to manage all important parameters, including prompts, temperature, and embedding settings.
+  * **Fully Configurable:** Centralized `config.json` file to manage all important parameters.
   * **Dual Embedding Modes:** Choose between a fast, local `sentence-transformers` model or using your LM Studio server's embedding endpoint.
-  * **Control Commands:** Includes commands like `!reindex`, `!purge`, and `!status` for full control over the knowledge base.
 
 -----
 
@@ -60,8 +61,8 @@ Place all the source code files you want to chat with inside the `codebase` dire
 
 For the script to function correctly, especially with `embedding_settings.mode` set to `"api"`, you need to load two types of models in LM Studio:
 
-* **A Chat Model:** This is the main model that generates answers and converses with you (e.g., *Qwen*, *Llama 3 Instruct*, *Mistral Instruct*).
-* **An Embedding Model:** This model specializes in converting text into numerical vectors. It's essential for the script to find relevant code snippets. A popular choice is *nomic-embed-text*.
+  * **A Chat Model:** This is the main model that generates answers and converses with you (e.g., *Qwen*, *Llama 3 Instruct*, *Mistral Instruct*).
+  * **An Embedding Model:** This model specializes in converting text into numerical vectors. It's essential for the script to find relevant code snippets. A popular choice is *nomic-embed-text*.
 
 **To set them up:**
 
@@ -115,30 +116,28 @@ The `config.json` file is the control center for the application.
 
 ### `embedding_settings`
 
-This section controls how the script generates vector embeddings.
+Controls how the script generates vector embeddings.
 
-  * `"mode"`: Sets the embedding method.
-      * `"api"`: (Default) Uses the embedding endpoint of your LM Studio server. This is slower but ensures no external internet connection is ever made.
-      * `"local"`: Uses a dedicated, highly-optimized `sentence-transformers` model. This is much faster for indexing but requires a one-time download of the model from Hugging Face.
-  * `"local_model"`: The name of the `sentence-transformers` model to use when `mode` is set to `"local"`.
-  * `"top_k_chunks"`: The number of relevant text chunks to retrieve from the database and use as context for the LLM.
+  * `"mode"`: `"api"` (default) or `"local"`.
+  * `"local_model"`: Name of the `sentence-transformers` model to use in `local` mode.
+  * `"top_k_chunks"`: Number of relevant chunks to use as context.
 
 ### `llm_settings`
 
-This section controls the interaction with the Large Language Model.
+Controls the interaction with the Large Language Model.
 
-  * `"server_url"`: The address of your LM Studio server.
+  * `"server_url"`: Address of your LM Studio server.
   * `"chat_model_name"`: A name passed to the API.
-  * `"temperature"`: Controls the randomness of the LLM's response. Lower values (e.g., `0.2`) are more deterministic; higher values (e.g., `0.8`) are more creative.
-  * `"system_prompt"`: The core instruction that defines the LLM's persona and overall goal.
-  * `"master_prompt_template"`: The template used to construct the final prompt sent to the LLM. The script will replace `{context}` with the retrieved code snippets and `{question}` with the user's question.
+  * `"temperature"`: Controls the randomness of the LLM's response.
+  * `"system_prompt"`: Defines the LLM's persona and goal.
+  * `"master_prompt_template"`: The template used to construct the final prompt.
 
 ### `context_settings`
 
-This section controls the new conversational memory feature.
+Controls the conversational memory feature.
 
-  * `"max_history_length"`: The maximum number of messages (user questions + assistant answers) to keep in the conversation history. This creates a "sliding window" of memory.
-  * `"context_enabled_by_default"`: Set to `true` if you want conversation history to be active by default when the script starts, or `false` for it to be off by default.
+  * `"max_history_length"`: Maximum number of messages to keep in the conversation history.
+  * `"context_enabled_by_default"`: `true` or `false` to set the default state of the conversation history.
 
 -----
 
@@ -163,11 +162,19 @@ These commands allow you to control the conversational memory.
 
 | Command | Arguments | Description |
 | :--- | :--- | :--- |
-| **`!context-on`** | *None* | Enables conversation history. The LLM will remember previous turns. |
+| **`!context-on`** | *None* | Enables conversation history for the current session. |
 | **`!context-off`**| *None* | Disables conversation history. Each question is treated as a one-shot query. |
 | **`!context-list`**| *None* | Shows a list of all saved conversation contexts. |
 | **`!context-new`**| `<name>` | Creates and switches to a new, empty conversation context. |
 | **`!context-switch`**| `<name>` | Switches to a previously created conversation context. |
-| **`!context-delete`**| `<name>` | **Destructive.** Permanently deletes a conversation context and its entire history. Asks for confirmation. |
+| **`!context-delete`**| `<name>` | **Destructive.** Permanently deletes a conversation context and its entire history. |
+
+### Session Settings Commands
+
+These commands allow you to temporarily change settings for the current session. Changes are lost when the script exits.
+
+| Command | Arguments | Description |
+| :--- | :--- | :--- |
+| **`!settings`** | `<param> <value>` | Changes a setting for the current session. Currently supports `temperature`. |
 
 Any input that does not start with `!` is interpreted as a question to be asked to the codebase.
