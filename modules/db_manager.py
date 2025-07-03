@@ -19,16 +19,45 @@ class VectorDB:
                 self.config = json.load(f)
             
             embedding_settings = self.config.get("embedding_settings", {})
-            self.mode = embedding_settings.get("mode", "local")
+            self.mode = embedding_settings.get("mode", "api")
 
             if self.mode == "local":
-                from sentence_transformers import SentenceTransformer
+                # --- MODIFICATIONS START HERE ---
+                try:
+                    from sentence_transformers import SentenceTransformer
+                except ImportError as e:
+                    print("\n--- FATAL ERROR: Missing Dependency ---")
+                    print(f"The 'local' embedding mode requires the 'sentence-transformers' package, which was not found.")
+                    print(f"Please install it from your terminal with the command:")
+                    print(f"\n    pip install sentence-transformers\n")
+                    exit(1)
+
                 model_name = embedding_settings.get("local_model")
                 if not model_name:
                     raise ValueError("Config error: 'local_model' must be set for 'local' embedding mode.")
+                
+                # Read the trust_remote_code setting from config, defaulting to False for security
+                trust_mode = embedding_settings.get("trust_remote_code", False)
+
                 print(f"Mode: 'local'. Loading SentenceTransformer model '{model_name}'...")
-                self.embedding_model = SentenceTransformer(model_name)
+                
+                try:
+                    self.embedding_model = SentenceTransformer(model_name, trust_remote_code=trust_mode)
+                except ValueError as e:
+                    # Catch and guide the user for missing model-specific dependencies
+                    if "requires the following packages" in str(e):
+                        package_name = str(e).split("environment: ")[-1].strip()
+                        print("\n--- FATAL ERROR: Missing Model Dependency ---")
+                        print(f"The model '{model_name}' requires the package '{package_name}', which was not found.")
+                        print("To use this model, please install the dependency from your terminal:")
+                        print(f"\n    pip install {package_name}\n")
+                        exit(1)
+                    else:
+                        raise # Re-raise other ValueErrors
+
                 print("Model loaded.")
+                # --- MODIFICATIONS END HERE ---
+
             elif self.mode == "api":
                 llm_settings = self.config.get("llm_settings", {})
                 url = llm_settings.get("server_url")
@@ -40,7 +69,7 @@ class VectorDB:
                 raise ValueError(f"Invalid embedding_mode: '{self.mode}'. Choose 'local' or 'api'.")
 
         except Exception as e:
-            print(f"FATAL: Could not initialize DB Manager. Error: {e}")
+            print(f"\nFATAL: Could not initialize DB Manager. Error: {e}")
             exit(1)
             
         if self.conn:
@@ -149,8 +178,6 @@ class VectorDB:
             cur.execute("DELETE FROM chat_history;")
             self.conn.commit()
             
-            # --- FIX APPLICATO ---
-            # Esegui VACUUM dopo il commit, al di fuori della transazione.
             self.conn.execute("VACUUM;")
             
             return True
