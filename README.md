@@ -58,11 +58,17 @@ Place all the source code files you want to chat with inside the `codebase` dire
 
 ### 4\. Configure your Local LLM
 
-1.  Open **LM Studio**.
-2.  Download a model of your choice from the **Discover** tab. An instruction-tuned model is recommended.
-3.  Go to the **Local Server** tab (`>_` icon).
-4.  Select your downloaded model at the top.
-5.  Click **Start Server**.
+For the script to function correctly, especially with `embedding_settings.mode` set to `"api"`, you need to load two types of models in LM Studio:
+
+* **A Chat Model:** This is the main model that generates answers and converses with you (e.g., *Qwen*, *Llama 3 Instruct*, *Mistral Instruct*).
+* **An Embedding Model:** This model specializes in converting text into numerical vectors. It's essential for the script to find relevant code snippets. A popular choice is *nomic-embed-text*.
+
+**To set them up:**
+
+1.  Open **LM Studio** and go to the **Local Server** tab (`>_` icon).
+2.  In the **Select a model to load** dropdown at the top, choose your preferred **Chat Model**.
+3.  In the **Select an embedding model** dropdown (usually located on the right panel), choose your **Embedding Model**.
+4.  Click **Start Server**.
 
 ### 5\. Configure the Script
 
