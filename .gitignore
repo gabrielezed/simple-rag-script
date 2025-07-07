@@ -28,3 +28,4 @@ vss.so
 *.temp
 *.ps1
 *.db
+rag_database.db-journal
