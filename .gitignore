@@ -1,8 +1,12 @@
 #Ignore codebase-example
 codebase-example/
 codebase/*
+
 #Ignore VSCODE
 .vscode/
+
+#Personal notes
+notes/
 
 #Ignore Python venv
 .venv/

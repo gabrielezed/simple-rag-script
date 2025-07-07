@@ -1,7 +1,7 @@
 {
   "embedding_settings": {
     "mode": "local",    
-    "local_model": "nomic-ai/nomic-embed-text-v1.5",
+    "local_model": "nomic-ai/nomic-embed-text-v2-moe",
     "top_k_chunks": 5,
     "trust_remote_code": true
   },

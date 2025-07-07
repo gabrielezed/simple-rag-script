@@ -5,6 +5,9 @@ import time
 from . import file_processor
 from .terminal_colors import Colors # Importa i colori
 
+CODEBASE_DIR = 'codebase'
+IGNORE_FILE = '.ragignore'
+
 def handle_help():
     """Prints the help message with available commands."""
     print(f"\n{Colors.GREEN}--- RAG Console Help ---{Colors.RESET}")
