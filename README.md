@@ -169,7 +169,9 @@ The application is controlled via a series of special commands that begin with `
 | **`!context-list`**| *None* | Shows a list of all saved conversation contexts. |
 | **`!context-new`**| `<name>` | Creates and switches to a new, empty conversation context. |
 | **`!context-switch`**| `<name>` | Switches to a previously created conversation context. |
+| **`!context-clear`**| *None* | **Destructive.** Clears the history of the currently active context. |
 | **`!context-delete`**| `<name>` | **Destructive.** Permanently deletes a conversation context and its entire history. |
+
 
 ### Session Settings Commands
 
